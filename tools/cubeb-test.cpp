@@ -573,7 +573,9 @@ cubeb_devid cubeb_client::select_device(cubeb_device_type type) const
 }
 
 int main(int argc, char* argv[]) {
-#ifdef _WIN32
+#ifdef _UWP
+  CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+#elif defined(_WIN32)
   CoInitialize(nullptr);
 #endif
 

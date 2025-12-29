@@ -291,11 +291,23 @@ if(USE_WASAPI)
   target_sources(cubeb PRIVATE
     src/cubeb_wasapi.cpp)
   target_compile_definitions(cubeb PRIVATE USE_WASAPI)
-  target_link_libraries(cubeb PRIVATE avrt ole32 ksuser)
-  list(APPEND private_libs avrt ole32 ksuser)
+  if(CMAKE_SYSTEM_NAME MATCHES "WindowsStore")
+    # UWP doesn't support AVRT
+    target_link_libraries(cubeb PRIVATE ole32 ksuser)
+    list(APPEND private_libs ole32 ksuser)
+  else()
+    target_link_libraries(cubeb PRIVATE avrt ole32 ksuser)
+    list(APPEND private_libs avrt ole32 ksuser)
+  endif()
 endif()
 
-check_include_files("windows.h;mmsystem.h" USE_WINMM)
+if(CMAKE_SYSTEM_NAME MATCHES "WindowsStore")
+  add_definitions(-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -D_UWP)
+  # UWP doesn't support winmm apis
+  set(USE_WINMM OFF)
+else()
+  check_include_files("windows.h;mmsystem.h" USE_WINMM)
+endif()
 if(USE_WINMM)
   target_sources(cubeb PRIVATE
     src/cubeb_winmm.c)

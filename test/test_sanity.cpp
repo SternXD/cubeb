@@ -27,14 +27,16 @@
 int
 is_windows_7()
 {
-#ifdef __MINGW32__
+#ifdef _UWP
+  // UWP doesn't support VerifyVersionInfo, assume not Windows 7
+  return 0;
+#elif defined(__MINGW32__)
   fprintf(stderr,
           "Warning: this test was built with MinGW.\n"
           "MinGW does not contain necessary version checking infrastructure. "
           "Claiming to be Windows 7, even if we're not.\n");
   return 1;
-#endif
-#if (defined(_WIN32) || defined(__WIN32__)) && (!defined(__MINGW32__))
+#elif (defined(_WIN32) || defined(__WIN32__))
   OSVERSIONINFOEX osvi;
   DWORDLONG condition_mask = 0;
 

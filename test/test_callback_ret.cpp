@@ -152,7 +152,7 @@ run_test_callback(test_direction direction, cubeb_data_callback data_cb,
                   const std::string & test_desc)
 {
   cubeb * ctx;
-  cubeb_stream * stream;
+  cubeb_stream * stream = nullptr;
   cubeb_stream_params input_params;
   cubeb_stream_params output_params;
   int r;

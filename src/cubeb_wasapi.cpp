@@ -14,9 +14,13 @@
 #include <algorithm>
 #include <atomic>
 #include <audioclient.h>
+#ifndef _UWP
 #include <avrt.h>
+#endif
 #include <cmath>
+#ifndef _UWP
 #include <devicetopology.h>
+#endif
 #include <initguid.h>
 #include <limits>
 #include <memory>
@@ -30,7 +34,9 @@
 #include <windows.h>
 /* clang-format off */
 /* These need to be included after windows.h */
+#ifndef _UWP
 #include <mmsystem.h>
+#endif
 /* clang-format on */
 
 #include "cubeb-internal.h"
@@ -99,6 +105,10 @@ DEFINE_PROPERTYKEY(PKEY_Device_FriendlyName, 0xa45c254e, 0xdf1c, 0x4efd, 0x80,
 DEFINE_PROPERTYKEY(PKEY_Device_InstanceId, 0x78c34fc8, 0x104a, 0x4aca, 0x9e,
                    0xa4, 0x52, 0x4d, 0x52, 0x99, 0x6e, 0x57,
                    0x00000100); //    VT_LPWSTR
+#endif
+
+#ifdef _UWP
+#include "cubeb_wasapi_uwp.h"
 #endif
 
 namespace {
@@ -755,7 +765,11 @@ public:
 
   wasapi_endpoint_notification_client(HANDLE event, ERole role)
       : ref_count(1), reconfigure_event(event), role(role),
+#ifdef _UWP
+        last_device_change(GetTickCount())
+#else
         last_device_change(timeGetTime())
+#endif
   {
   }
 
@@ -773,7 +787,11 @@ public:
       return S_OK;
     }
 
+#ifdef _UWP
+    DWORD last_change_ms = GetTickCount() - last_device_change;
+#else
     DWORD last_change_ms = timeGetTime() - last_device_change;
+#endif
     bool same_device = default_device_id && device_id &&
                        wcscmp(default_device_id.get(), device_id) == 0;
     LOG("endpoint: Audio device default changed last_change=%lu same_device=%d",
@@ -1398,7 +1416,8 @@ refill_callback_output(cubeb_stream * stm)
 void
 wasapi_stream_destroy(cubeb_stream * stm);
 
-static unsigned int __stdcall wasapi_stream_render_loop(LPVOID stream)
+static unsigned int __stdcall
+wasapi_stream_render_loop(LPVOID stream)
 {
   AutoRegisterThread raii("cubeb rendering thread");
   cubeb_stream * stm = static_cast<cubeb_stream *>(stream);
@@ -1430,12 +1449,20 @@ static unsigned int __stdcall wasapi_stream_render_loop(LPVOID stream)
 
   /* We could consider using "Pro Audio" here for WebAudio and
      maybe WebRTC. */
+#ifdef _UWP
+  // UWP doesn't support AVRT, use SetThreadPriority instead
+  if (!SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL)) {
+    /* This is not fatal, but we might glitch under heavy load. */
+    LOG("Unable to bump the render thread priority: %lx", GetLastError());
+  }
+#else
   mmcss_handle = AvSetMmThreadCharacteristicsA("Audio", &mmcss_task_index);
   if (!mmcss_handle) {
     /* This is not fatal, but we might glitch under heavy load. */
     LOG("Unable to use mmcss to bump the render thread priority: %lx",
         GetLastError());
   }
+#endif
 
   while (is_playing) {
     DWORD waitResult = WaitForMultipleObjects(ARRAY_LENGTH(wait_array),
@@ -1540,9 +1567,11 @@ static unsigned int __stdcall wasapi_stream_render_loop(LPVOID stream)
     stm->input_client->Stop();
   }
 
+#ifndef _UWP
   if (mmcss_handle) {
     AvRevertMmThreadCharacteristics(mmcss_handle);
   }
+#endif
 
   if (FAILED(hr)) {
     wasapi_state_callback(stm, stm->user_ptr, CUBEB_STATE_ERROR);
@@ -1595,7 +1624,11 @@ get_endpoint(com_ptr<IMMDevice> & device, LPCWSTR devid)
 {
   com_ptr<IMMDeviceEnumerator> enumerator;
   HRESULT hr =
+#ifdef _UWP
+      CoCreateInstance(CLSID_MMDeviceEnumerator, NULL, CLSCTX_INPROC_SERVER,
+#else
       CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_INPROC_SERVER,
+#endif
                        IID_PPV_ARGS(enumerator.receive()));
   if (FAILED(hr)) {
     LOG("Could not get device enumerator: %lx", hr);
@@ -1618,7 +1651,11 @@ register_collection_notification_client(cubeb * context)
   XASSERT(!context->device_collection_enumerator &&
           !context->collection_notification_client);
   HRESULT hr = CoCreateInstance(
+#ifdef _UWP
+      CLSID_MMDeviceEnumerator, NULL, CLSCTX_INPROC_SERVER,
+#else
       __uuidof(MMDeviceEnumerator), NULL, CLSCTX_INPROC_SERVER,
+#endif
       IID_PPV_ARGS(context->device_collection_enumerator.receive()));
   if (FAILED(hr)) {
     LOG("Could not get device enumerator: %lx", hr);
@@ -1665,7 +1702,11 @@ get_default_endpoint(com_ptr<IMMDevice> & device, EDataFlow direction,
 {
   com_ptr<IMMDeviceEnumerator> enumerator;
   HRESULT hr =
+#ifdef _UWP
+      CoCreateInstance(CLSID_MMDeviceEnumerator, NULL, CLSCTX_INPROC_SERVER,
+#else
       CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_INPROC_SERVER,
+#endif
                        IID_PPV_ARGS(enumerator.receive()));
   if (FAILED(hr)) {
     LOG("Could not get device enumerator: %lx", hr);
@@ -2774,7 +2815,11 @@ wasapi_stream_init(cubeb * context, cubeb_stream ** stream,
   stm->input_bluetooth_handsfree = false;
 
   HRESULT hr =
+#ifdef _UWP
+      CoCreateInstance(CLSID_MMDeviceEnumerator, NULL, CLSCTX_INPROC_SERVER,
+#else
       CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_INPROC_SERVER,
+#endif
                        IID_PPV_ARGS(stm->device_enumerator.receive()));
   if (FAILED(hr)) {
     LOG("Could not get device enumerator: %lx", hr);
@@ -3236,6 +3281,8 @@ utf8_to_wstr(char const * str)
   return ret;
 }
 
+#ifndef _UWP
+// Device topology is not available in UWP
 static com_ptr<IMMDevice>
 wasapi_get_device_node(IMMDeviceEnumerator * enumerator, IMMDevice * dev)
 {
@@ -3256,6 +3303,7 @@ wasapi_get_device_node(IMMDeviceEnumerator * enumerator, IMMDevice * dev)
 
   return ret;
 }
+#endif // _UWP
 
 static com_heap_ptr<wchar_t>
 wasapi_get_default_device_id(EDataFlow flow, ERole role,
@@ -3356,7 +3404,9 @@ wasapi_create_device(cubeb * ctx, cubeb_device_info & ret,
     ret.friendly_name = empty;
   }
 
+#ifndef _UWP
   devnode = wasapi_get_device_node(enumerator, dev);
+#endif
   if (devnode) {
     com_ptr<IPropertyStore> ps;
     hr = devnode->OpenPropertyStore(STGM_READ, ps.receive());
@@ -3466,7 +3516,11 @@ wasapi_enumerate_devices_internal(cubeb * context, cubeb_device_type type,
   EDataFlow flow;
 
   hr =
+#ifdef _UWP
+      CoCreateInstance(CLSID_MMDeviceEnumerator, NULL, CLSCTX_INPROC_SERVER,
+#else
       CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_INPROC_SERVER,
+#endif
                        IID_PPV_ARGS(enumerator.receive()));
   if (FAILED(hr)) {
     LOG("Could not get device enumerator: %lx", hr);
